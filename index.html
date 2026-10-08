@@ -88,6 +88,15 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 #info { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 20px; }
 input[type="file"] { display: none; }
 footer { margin-top: 28px; color: var(--muted); font-size: 13px; text-align: center; }
+#sheet {
+  position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+#sheet .card { width: 100%; max-width: 420px; text-align: center; }
+#sheet img { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--stage); -webkit-touch-callout: default; }
+#sheet p { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+#sheet .btns { margin-top: 12px; }
+#sheet .primary { margin-top: 0; }
 footer a { color: var(--accent); }
 </style>
 </head>
@@ -162,6 +171,17 @@ footer a { color: var(--accent); }
 
   <footer>Everything runs locally in your browser. Nothing is uploaded.</footer>
 </main>
+
+<div id="sheet" hidden role="dialog" aria-modal="true" aria-label="Save image">
+  <div class="card">
+    <img id="result" alt="Cropped image">
+    <p>Tap <strong>Save to Photos</strong>, then choose <strong>Save Image</strong>. Or press and hold the image.</p>
+    <div class="btns">
+      <button id="share" class="primary" type="button">Save to Photos</button>
+      <button id="closeSheet" type="button">Close</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -381,6 +401,14 @@ footer a { color: var(--accent); }
 
   function clampInt(v) { return Math.min(8192, Math.max(16, Math.round(+v) || 16)); }
 
+  // Phones save downloads to Files, where Discord's picker can't see them.
+  // Where files can be shared, show the result with a share button instead:
+  // the share sheet's "Save Image" puts it in Photos.
+  const sheet = $("sheet"), resultImg = $("result");
+  let resultFile = null;
+  const canShareFiles = (file) => !!(navigator.canShare && navigator.canShare({ files: [file] }));
+  const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
   $("download").addEventListener("click", () => {
     if (!src) return;
     const type = formatEl.value;
@@ -388,14 +416,36 @@ footer a { color: var(--accent); }
     const ext = { "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg" }[type];
     exportCanvas().toBlob((blob) => {
       if (!blob) { info.textContent = "Export failed — try PNG."; return; }
+      const name = `${fileName}-${outW.value}x${outH.value}.${ext}`;
+      const file = new File([blob], name, { type });
+      const size = `${(blob.size / 1024).toFixed(0)} KB`;
+      if (isTouch && canShareFiles(file)) {
+        resultFile = file;
+        if (resultImg.src) URL.revokeObjectURL(resultImg.src);
+        resultImg.src = URL.createObjectURL(blob);
+        sheet.hidden = false;
+        info.textContent = `Ready: ${name} (${size})`;
+        return;
+      }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${fileName}-${outW.value}x${outH.value}.${ext}`;
+      a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      info.textContent = `Saved ${a.download} (${(blob.size / 1024).toFixed(0)} KB)`;
+      info.textContent = `Saved ${name} (${size})`;
     }, type, quality);
   });
+
+  $("share").addEventListener("click", async () => {
+    try {
+      await navigator.share({ files: [resultFile] });
+      sheet.hidden = true;
+    } catch (e) {
+      if (e.name !== "AbortError") info.textContent = "Sharing failed — press and hold the image to save it.";
+    }
+  });
+  $("closeSheet").addEventListener("click", () => (sheet.hidden = true));
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.hidden = true; });
 
   // ---------- input: pointer / wheel / keys ----------
   const pointers = new Map();

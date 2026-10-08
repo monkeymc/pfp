@@ -95,6 +95,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 13px; text-align: cen
 #sheet .card { width: 100%; max-width: 420px; text-align: center; }
 #sheet img { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--stage); -webkit-touch-callout: default; }
 #sheet p { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+#sheet .tip { text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
 #sheet .btns { margin-top: 12px; }
 #sheet .primary { margin-top: 0; }
 footer a { color: var(--accent); }
@@ -176,6 +177,7 @@ footer a { color: var(--accent); }
   <div class="card">
     <img id="result" alt="Cropped image">
     <p>Tap <strong>Save to Photos</strong>, then choose <strong>Save Image</strong>. Or press and hold the image.</p>
+    <p class="tip"><strong>Tip:</strong> the Discord iPhone app lowers avatar quality on upload. For the sharpest result, upload at <strong>discord.com</strong> in Safari (aA → Request Desktop Website). Your avatar syncs to the app.</p>
     <div class="btns">
       <button id="share" class="primary" type="button">Save to Photos</button>
       <button id="closeSheet" type="button">Close</button>

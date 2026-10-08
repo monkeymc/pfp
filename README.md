@@ -2,7 +2,7 @@
 
 Crop and resize images for Discord avatars, server icons and profile banners. Runs entirely in the browser; nothing is uploaded.
 
-Live: https://monkeymc.github.io/pfp-cropper/
+Live: https://monkeymc.github.io/pfp/
 
 - Drag to move, scroll or pinch to zoom, arrow keys to nudge
 - Presets: avatar (1:1 with circle guide), banner (17:6), plain square

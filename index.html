@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PFP Cropper</title>
+<meta name="description" content="Crop and resize images for Discord avatars and banners. Runs entirely in your browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%235865f2'/><circle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='3'/></svg>">
+<style>
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --text: #1e1f22;
+  --muted: #5c5f66;
+  --border: #dcdee3;
+  --accent: #5865f2;
+  --accent-text: #ffffff;
+  --stage: #e3e5e8;
+  --shade: rgba(0, 0, 0, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1f22;
+    --panel: #2b2d31;
+    --text: #f2f3f5;
+    --muted: #a9acb3;
+    --border: #3f4147;
+    --stage: #111214;
+    --shade: rgba(0, 0, 0, 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1f22;
+  --panel: #2b2d31;
+  --text: #f2f3f5;
+  --muted: #a9acb3;
+  --border: #3f4147;
+  --stage: #111214;
+  --shade: rgba(0, 0, 0, 0.6);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+h1 { font-size: 22px; margin: 0; }
+header p { margin: 0; color: var(--muted); font-size: 14px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+#stageWrap { position: relative; width: 100%; background: var(--stage); border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; }
+#stage { display: block; width: 100%; height: 100%; cursor: grab; }
+#stage.dragging { cursor: grabbing; }
+#drop {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 16px; color: var(--muted); border: 2px dashed var(--border); border-radius: 8px;
+}
+#drop.over { border-color: var(--accent); color: var(--text); }
+#drop strong { color: var(--text); font-size: 17px; }
+.hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+label.field { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+label.field:first-child { margin-top: 0; }
+select, input[type="number"] {
+  width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font: inherit;
+}
+input[type="range"] { flex: 1; accent-color: var(--accent); }
+button {
+  font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  padding: 8px 12px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); width: 100%; padding: 11px; font-weight: 600; margin-top: 16px; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btns button { flex: 1; }
+.sizes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#previews { display: flex; align-items: flex-end; gap: 14px; margin-top: 16px; }
+#previews canvas { border-radius: 50%; background: var(--stage); }
+#previews.banner canvas { border-radius: 6px; }
+#info { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 20px; }
+input[type="file"] { display: none; }
+footer { margin-top: 28px; color: var(--muted); font-size: 13px; text-align: center; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>PFP Cropper</h1>
+    <p>Crop and resize for Discord. Your image never leaves your browser.</p>
+  </header>
+
+  <div class="layout">
+    <section class="card">
+      <div id="stageWrap">
+        <canvas id="stage" tabindex="0" aria-label="Crop area. Drag to move, scroll or pinch to zoom."></canvas>
+        <div id="drop">
+          <strong>Drop an image here</strong>
+          <span>or paste from clipboard</span>
+          <button id="pick" type="button">Choose image</button>
+        </div>
+      </div>
+      <div class="row">
+        <span aria-hidden="true">−</span>
+        <input id="zoom" type="range" min="0" max="1000" value="0" aria-label="Zoom" disabled>
+        <span aria-hidden="true">+</span>
+      </div>
+      <p class="hint">Drag to move · scroll or pinch to zoom · arrow keys nudge</p>
+      <input id="file" type="file" accept="image/*">
+    </section>
+
+    <aside class="card">
+      <label class="field" for="preset">Preset</label>
+      <select id="preset">
+        <option value="avatar">Avatar / server icon (1:1)</option>
+        <option value="banner">Profile banner (17:6)</option>
+        <option value="square">Square, no circle guide</option>
+      </select>
+
+      <label class="field">Output size (px)</label>
+      <div class="sizes">
+        <input id="outW" type="number" min="16" max="8192" value="1024" aria-label="Width">
+        <input id="outH" type="number" min="16" max="8192" value="1024" aria-label="Height">
+      </div>
+
+      <label class="field" for="format">Format</label>
+      <select id="format">
+        <option value="image/png">PNG (lossless)</option>
+        <option value="image/webp">WebP (quality 100)</option>
+        <option value="image/jpeg">JPEG (quality 95)</option>
+      </select>
+
+      <label class="field">Adjust</label>
+      <div class="btns">
+        <button id="rotL" type="button" disabled title="Rotate left">⟲ 90°</button>
+        <button id="rotR" type="button" disabled title="Rotate right">⟳ 90°</button>
+        <button id="flip" type="button" disabled title="Flip horizontally">⇋ Flip</button>
+      </div>
+      <div class="btns" style="margin-top:8px">
+        <button id="reset" type="button" disabled>Reset</button>
+        <button id="change" type="button" disabled>New image</button>
+      </div>
+
+      <div id="previews" aria-label="Preview" hidden>
+        <canvas id="pv1"></canvas>
+        <canvas id="pv2"></canvas>
+        <canvas id="pv3"></canvas>
+      </div>
+
+      <button id="download" class="primary" type="button" disabled>Download</button>
+      <div id="info"></div>
+    </aside>
+  </div>
+
+  <footer>Everything runs locally in your browser. Nothing is uploaded.</footer>
+</main>
+
+<script>
+(() => {
+  const PRESETS = {
+    avatar: { ratio: 1, w: 1024, h: 1024, circle: true },
+    banner: { ratio: 17 / 6, w: 1360, h: 480, circle: false },
+    square: { ratio: 1, w: 1024, h: 1024, circle: false },
+  };
+  const MAX_ZOOM = 8; // relative to the "cover" scale
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), wrap = $("stageWrap"), ctx = stage.getContext("2d");
+  const drop = $("drop"), fileInput = $("file"), zoomEl = $("zoom");
+  const outW = $("outW"), outH = $("outH"), presetEl = $("preset"), formatEl = $("format");
+  const info = $("info"), previews = $("previews");
+  const pvs = [$("pv1"), $("pv2"), $("pv3")];
+  const controls = ["zoom", "rotL", "rotR", "flip", "reset", "change", "download"].map($);
+
+  let src = null;          // canvas holding the oriented source image
+  let fileName = "image";
+  let rotation = 0, flipped = false, original = null;
+  let preset = PRESETS.avatar;
+  // View state: image drawn at (tx, ty) with `scale` source px -> CSS px.
+  let scale = 1, minScale = 1, tx = 0, ty = 0, viewW = 0, viewH = 0;
+
+  // ---------- loading ----------
+  async function load(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    let bmp;
+    try {
+      bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      bmp = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = URL.createObjectURL(file);
+      }).catch(() => null);
+    }
+    if (!bmp) { info.textContent = "Couldn't read that image."; return; }
+    original = bmp;
+    fileName = (file.name || "image").replace(/\.[^.]+$/, "");
+    rotation = 0; flipped = false;
+    buildSource();
+    drop.hidden = true;
+    previews.hidden = false;
+    controls.forEach((c) => (c.disabled = false));
+    fitCover();
+  }
+
+  function buildSource() {
+    const w = original.width, h = original.height;
+    const swap = rotation % 180 !== 0;
+    const c = document.createElement("canvas");
+    c.width = swap ? h : w;
+    c.height = swap ? w : h;
+    const g = c.getContext("2d");
+    g.translate(c.width / 2, c.height / 2);
+    g.rotate((rotation * Math.PI) / 180);
+    if (flipped) g.scale(-1, 1);
+    g.drawImage(original, -w / 2, -h / 2);
+    src = c;
+  }
+
+  // ---------- view math ----------
+  function sizeStage() {
+    const w = wrap.clientWidth;
+    const h = Math.round(w / preset.ratio);
+    wrap.style.height = h + "px";
+    const dpr = window.devicePixelRatio || 1;
+    stage.width = Math.round(w * dpr);
+    stage.height = Math.round(h * dpr);
+    const oldW = viewW, oldH = viewH;
+    viewW = w; viewH = h;
+    return { oldW, oldH };
+  }
+
+  function computeMinScale() {
+    minScale = Math.max(viewW / src.width, viewH / src.height);
+  }
+
+  function fitCover() {
+    sizeStage();
+    computeMinScale();
+    scale = minScale;
+    tx = (viewW - src.width * scale) / 2;
+    ty = (viewH - src.height * scale) / 2;
+    syncZoomSlider();
+    render();
+  }
+
+  function clamp() {
+    scale = Math.min(Math.max(scale, minScale), minScale * MAX_ZOOM);
+    const w = src.width * scale, h = src.height * scale;
+    tx = Math.min(0, Math.max(viewW - w, tx));
+    ty = Math.min(0, Math.max(viewH - h, ty));
+  }
+
+  function zoomAt(newScale, cx, cy) {
+    const sx = (cx - tx) / scale, sy = (cy - ty) / scale;
+    scale = newScale;
+    clamp();
+    tx = cx - sx * scale;
+    ty = cy - sy * scale;
+    clamp();
+    syncZoomSlider();
+    render();
+  }
+
+  // Slider is logarithmic so each step feels the same.
+  function syncZoomSlider() {
+    zoomEl.value = Math.round((Math.log(scale / minScale) / Math.log(MAX_ZOOM)) * 1000);
+  }
+  zoomEl.addEventListener("input", () => {
+    if (!src) return;
+    zoomAt(minScale * Math.pow(MAX_ZOOM, zoomEl.value / 1000), viewW / 2, viewH / 2);
+  });
+
+  // ---------- rendering ----------
+  function render() {
+    const dpr = stage.width / viewW;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, stage.width, stage.height);
+    if (!src) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, tx, ty, src.width * scale, src.height * scale);
+
+    if (preset.circle) {
+      const r = viewW / 2;
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--shade");
+      ctx.beginPath();
+      ctx.rect(0, 0, viewW, viewH);
+      ctx.arc(viewW / 2, viewH / 2, r, 0, Math.PI * 2, true);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(viewW / 2, viewH / 2, r - 0.75, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // rule-of-thirds guides
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 3; i++) {
+      ctx.moveTo((viewW * i) / 3, 0); ctx.lineTo((viewW * i) / 3, viewH);
+      ctx.moveTo(0, (viewH * i) / 3); ctx.lineTo(viewW, (viewH * i) / 3);
+    }
+    ctx.stroke();
+
+    schedulePreview();
+  }
+
+  function cropRect() {
+    return { x: -tx / scale, y: -ty / scale, w: viewW / scale, h: viewH / scale };
+  }
+
+  // ---------- previews ----------
+  let pvPending = false;
+  function schedulePreview() {
+    if (pvPending) return;
+    pvPending = true;
+    requestAnimationFrame(() => { pvPending = false; drawPreviews(); });
+  }
+  function drawPreviews() {
+    const sizes = preset.circle ? [80, 40, 24] : preset.ratio > 1 ? [170, 0, 0] : [80, 40, 24];
+    previews.classList.toggle("banner", !preset.circle);
+    const r = cropRect();
+    const dpr = window.devicePixelRatio || 1;
+    pvs.forEach((c, i) => {
+      const w = sizes[i];
+      c.hidden = !w;
+      if (!w) return;
+      const h = Math.round(w / preset.ratio);
+      c.style.width = w + "px"; c.style.height = h + "px";
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      const g = c.getContext("2d");
+      g.imageSmoothingQuality = "high";
+      g.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+    });
+    const ow = +outW.value, oh = +outH.value;
+    const up = r.w < ow - 0.5;
+    info.textContent = `Crop ${Math.round(r.w)}×${Math.round(r.h)} → ${ow}×${oh}` + (up ? " (upscaling — zoom out for sharper result)" : "");
+  }
+
+  // ---------- export ----------
+  // Crop at full resolution, then halve repeatedly so each downscale step
+  // stays within 2x — avoids the aliasing a single big drawImage produces.
+  function exportCanvas() {
+    const r = cropRect();
+    const ow = clampInt(outW.value), oh = clampInt(outH.value);
+    let cur = document.createElement("canvas");
+    cur.width = Math.max(1, Math.round(r.w));
+    cur.height = Math.max(1, Math.round(r.h));
+    let g = cur.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    g.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, cur.width, cur.height);
+
+    while (cur.width / 2 >= ow && cur.height / 2 >= oh) {
+      const next = document.createElement("canvas");
+      next.width = Math.round(cur.width / 2);
+      next.height = Math.round(cur.height / 2);
+      g = next.getContext("2d");
+      g.imageSmoothingQuality = "high";
+      g.drawImage(cur, 0, 0, next.width, next.height);
+      cur = next;
+    }
+    const out = document.createElement("canvas");
+    out.width = ow; out.height = oh;
+    g = out.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    if (formatEl.value === "image/jpeg") { g.fillStyle = "#fff"; g.fillRect(0, 0, ow, oh); }
+    g.drawImage(cur, 0, 0, ow, oh);
+    return out;
+  }
+
+  function clampInt(v) { return Math.min(8192, Math.max(16, Math.round(+v) || 16)); }
+
+  $("download").addEventListener("click", () => {
+    if (!src) return;
+    const type = formatEl.value;
+    const quality = type === "image/jpeg" ? 0.95 : 1;
+    const ext = { "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg" }[type];
+    exportCanvas().toBlob((blob) => {
+      if (!blob) { info.textContent = "Export failed — try PNG."; return; }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${fileName}-${outW.value}x${outH.value}.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      info.textContent = `Saved ${a.download} (${(blob.size / 1024).toFixed(0)} KB)`;
+    }, type, quality);
+  });
+
+  // ---------- input: pointer / wheel / keys ----------
+  const pointers = new Map();
+  let pinch = null;
+
+  function localPoint(e) {
+    const b = stage.getBoundingClientRect();
+    return { x: e.clientX - b.left, y: e.clientY - b.top };
+  }
+
+  stage.addEventListener("pointerdown", (e) => {
+    if (!src) return;
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, localPoint(e));
+    stage.classList.add("dragging");
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), scale };
+    }
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const prev = pointers.get(e.pointerId);
+    const p = localPoint(e);
+    pointers.set(e.pointerId, p);
+    if (pointers.size === 1) {
+      tx += p.x - prev.x; ty += p.y - prev.y;
+      clamp(); render();
+    } else if (pointers.size === 2 && pinch) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // pan with the midpoint, zoom with the spread
+      tx += (p.x - prev.x) / 2; ty += (p.y - prev.y) / 2;
+      zoomAt(pinch.scale * (d / pinch.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+    }
+  });
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (!pointers.size) stage.classList.remove("dragging");
+  };
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+
+  stage.addEventListener("wheel", (e) => {
+    if (!src) return;
+    e.preventDefault();
+    const p = localPoint(e);
+    zoomAt(scale * Math.exp(-e.deltaY * 0.0015), p.x, p.y);
+  }, { passive: false });
+
+  stage.addEventListener("keydown", (e) => {
+    if (!src) return;
+    const step = e.shiftKey ? 20 : 4;
+    const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    if (moves[e.key]) {
+      tx += moves[e.key][0]; ty += moves[e.key][1]; clamp(); render();
+    } else if (e.key === "+" || e.key === "=") {
+      zoomAt(scale * 1.1, viewW / 2, viewH / 2);
+    } else if (e.key === "-") {
+      zoomAt(scale / 1.1, viewW / 2, viewH / 2);
+    } else return;
+    e.preventDefault();
+  });
+
+  // ---------- file input / drop / paste ----------
+  $("pick").addEventListener("click", () => fileInput.click());
+  $("change").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => { load(fileInput.files[0]); fileInput.value = ""; });
+
+  ["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => {
+    e.preventDefault(); drop.classList.add("over");
+  }));
+  ["dragleave", "drop"].forEach((t) => document.addEventListener(t, (e) => {
+    e.preventDefault(); drop.classList.remove("over");
+  }));
+  document.addEventListener("drop", (e) => load(e.dataTransfer.files[0]));
+  document.addEventListener("paste", (e) => {
+    const item = [...e.clipboardData.items].find((i) => i.type.startsWith("image/"));
+    if (item) load(item.getAsFile());
+  });
+
+  // ---------- adjust buttons ----------
+  function reorient(fn) {
+    fn();
+    buildSource();
+    fitCover();
+  }
+  $("rotL").addEventListener("click", () => reorient(() => (rotation = (rotation + 270) % 360)));
+  $("rotR").addEventListener("click", () => reorient(() => (rotation = (rotation + 90) % 360)));
+  $("flip").addEventListener("click", () => reorient(() => (flipped = !flipped)));
+  $("reset").addEventListener("click", () => reorient(() => { rotation = 0; flipped = false; }));
+
+  // ---------- settings ----------
+  presetEl.addEventListener("change", () => {
+    preset = PRESETS[presetEl.value];
+    outW.value = preset.w; outH.value = preset.h;
+    if (src) refit(); else sizeStage();
+  });
+  outW.addEventListener("input", () => {
+    outH.value = Math.round(clampInt(outW.value) / preset.ratio);
+    if (src) drawPreviews();
+  });
+  outH.addEventListener("input", () => {
+    outW.value = Math.round(clampInt(outH.value) * preset.ratio);
+    if (src) drawPreviews();
+  });
+
+  // Resize/preset change: keep the crop's center point and relative zoom.
+  function refit() {
+    const zoomRel = scale / minScale;
+    const cx = (viewW / 2 - tx) / scale, cy = (viewH / 2 - ty) / scale;
+    sizeStage();
+    computeMinScale();
+    scale = minScale * zoomRel;
+    tx = viewW / 2 - cx * scale;
+    ty = viewH / 2 - cy * scale;
+    clamp();
+    syncZoomSlider();
+    render();
+  }
+  new ResizeObserver(() => {
+    if (wrap.clientWidth === viewW) return;
+    if (src) refit(); else sizeStage();
+  }).observe(wrap);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+
+  sizeStage();
+})();
+</script>
+</body>
+</html>
